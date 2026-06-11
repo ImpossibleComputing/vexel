@@ -12,7 +12,15 @@ vexel_old
 # Benchmark environment
 benchmarks/.venv/
 benchmarks/models/
-benchmarks/results/
+benchmarks/results/*
+# ...but keep the result SCHEMA + canonical example (source artifacts, not run output).
+# Note: ignore the dir CONTENTS (/*) not the dir itself, so these negations apply.
+!benchmarks/results/SCHEMA.md
+!benchmarks/results/example_result.json
+
+# Python bytecode (benchmarks/ helper scripts)
+__pycache__/
+*.pyc
 
 # Memory/cache
 .remember/
