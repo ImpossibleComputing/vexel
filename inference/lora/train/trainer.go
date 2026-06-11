@@ -306,6 +306,14 @@ func (t *Trainer) tokenizeExample(ex Example) ([]int32, int, error) {
 		if err != nil {
 			return nil, 0, err
 		}
+		// tok.Encode intentionally omits BOS; callers must prepend it for models
+		// that expect a leading BOS (see scheduler.AddSequence, which does this at
+		// inference time). Without this, FormatText training data lacks the <bos>
+		// that inference always adds — a train/inference mismatch that is
+		// especially harmful for BOS-critical models like Gemma 2.
+		if t.tok.AddBOS() {
+			ids = append([]int{t.tok.BOS()}, ids...)
+		}
 		tokens := intsToInt32(ids)
 		return tokens, 0, nil
 
@@ -317,6 +325,14 @@ func (t *Trainer) tokenizeExample(ex Example) ([]int32, int, error) {
 		promptIDs, err := t.tok.Encode(formatted)
 		if err != nil {
 			return nil, 0, fmt.Errorf("encode prompt: %w", err)
+		}
+		// Some chat templates embed their own BOS marker string (e.g. Llama 3's
+		// "<|begin_of_text|>"), which Encode maps to the BOS id. For templates
+		// without one (e.g. Gemma 2, whose ChatTemplate.BOS is empty), prepend BOS
+		// ourselves so training matches inference — but only then, to avoid a
+		// double <bos>.
+		if t.tok.AddBOS() && chatTpl.BOS == "" {
+			promptIDs = append([]int{t.tok.BOS()}, promptIDs...)
 		}
 		completionIDs, err := t.tok.Encode(ex.Completion)
 		if err != nil {
