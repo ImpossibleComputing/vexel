@@ -444,7 +444,7 @@ func ModelConfigFromGGUF(g gguf.ModelConfigValues) ModelConfig {
 	hasBias := false
 	parallelResidual := false
 	ropeNeox := false              // Default to LLaMA-style (interleaved pairs)
-	attnLogitSoftCap := float32(0) // 0 = disabled, typically 30.0 for Gemma 2
+	attnLogitSoftCap := float32(0) // 0 = disabled, typically 50.0 for Gemma 2 attention
 	attnWindowType := WindowGlobal // Default: full context on every layer
 	hasPostNorms := false          // Default: no post-norms
 	embeddingScale := float32(0)   // 0 = disabled, Gemma uses sqrt(hiddenSize)

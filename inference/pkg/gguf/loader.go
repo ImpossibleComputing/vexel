@@ -44,6 +44,8 @@ var SupportedArchitectures = map[string]bool{
 	"phi3":      true, // Phi-3 identifier
 	"deepseek":  true, // DeepSeek MoE models
 	"deepseek2": true, // DeepSeek V2/V3 MoE models
+	"gemma":     true, // Gemma 1 (GeGLU MLP, embedding scale, NEOX RoPE)
+	"gemma2":    true, // Gemma 2 (sliding-window attn, logit soft-cap, post-norms)
 }
 
 // ValidateArchitecture checks if the architecture is supported and returns a warning if not.

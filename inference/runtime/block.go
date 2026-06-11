@@ -336,7 +336,7 @@ type BlockRuntime struct {
 	ropeFreqBuf tensor.DevicePtr
 
 	// Gemma 2 attention config
-	AttentionLogitSoftCap float32 // 0 = disabled, typically 30.0 for Gemma 2
+	AttentionLogitSoftCap float32 // 0 = disabled, typically 50.0 for Gemma 2 attention
 	HasPostNorms          bool    // Apply post-norms after attn and MLP (before residual)
 
 	// QueryPreAttnScalar is the denominator d in the attention scaling 1/sqrt(d).
