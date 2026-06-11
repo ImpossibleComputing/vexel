@@ -9,6 +9,7 @@ import (
 	"vexel/inference/backend"
 	"vexel/inference/backend/metal"
 	"vexel/inference/lora"
+	"vexel/inference/tensor"
 )
 
 // TestLoRAGradCPUvsGPU tests the loraGrads function against a CPU reference.
@@ -129,7 +130,10 @@ func TestLoRAGradCPUvsGPU(t *testing.T) {
 	grads := AllocGradients(gpuBackend, gpu, numLayers, hiddenSize, qDim, vDim)
 	ZeroGradients(training, grads, gpu, numLayers, hiddenSize, qDim, vDim)
 
-	loraGrads(gpuBackend, training, &gpu.Layers[0], normOutGPU, dQGPU, dVGPU, grads, 0,
+	// This test exercises only the Q and V LoRA paths (HasQ, HasV). The K and O
+	// gradient buffers (dK, dResidual, attnOut) are passed as nil DevicePtrs since
+	// loraGrads short-circuits those branches when the adapter lacks K/O.
+	loraGrads(gpuBackend, training, &gpu.Layers[0], normOutGPU, dQGPU, tensor.DevicePtr{}, dVGPU, tensor.DevicePtr{}, tensor.DevicePtr{}, grads, 0,
 		seqLen, hiddenSize, qDim, vDim, rank, scale)
 	gpuBackend.Sync()
 

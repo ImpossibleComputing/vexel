@@ -359,7 +359,7 @@ func backwardFullDebug(
 		la := adapter.GetLayer(li)
 		if la != nil {
 			normOut := saved.NormOut
-			loraGrads(b, training, la, normOut, dQ, dV, grads, li,
+			loraGrads(b, training, la, normOut, dQ, dK, dV, dResidual, saved.AttnOut, grads, li,
 				seqLen, hiddenSize, qDim, vDim, rank, loraScale)
 		}
 
@@ -501,7 +501,7 @@ func backwardFull(
 		la := adapter.GetLayer(li)
 		if la != nil {
 			normOut := saved.NormOut
-			loraGrads(b, training, la, normOut, dQ, dV, grads, li,
+			loraGrads(b, training, la, normOut, dQ, dK, dV, dResidual, saved.AttnOut, grads, li,
 				seqLen, hiddenSize, qDim, vDim, rank, loraScale)
 		}
 
