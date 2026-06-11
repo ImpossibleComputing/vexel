@@ -88,6 +88,18 @@ func compareSlices(a, b []float32, tol float32) (maxDiff float32, maxIdx int, eq
 func setupRuntime(t *testing.T, meta Metadata) *runtime.ModelRuntime {
 	t.Helper()
 
+	// The golden vectors in ./data were captured from the real TinyLlama-1.1B-Chat
+	// weights, so validation requires those exact weights at modelDir/tiny_model.safetensors.
+	// That file is multi-GB and intentionally git-ignored (see root .gitignore: models/,
+	// *.safetensors), so it is not present in a fresh checkout. Skip — rather than fail —
+	// when it is absent, matching the convention used by the other model-dependent tests
+	// (forward_pass_test.go, data_test.go). Run `make golden-model` (or
+	// test/golden/fetch_model.sh) to download the fixture and exercise these tests.
+	weightsPath := filepath.Join(modelDir, "tiny_model.safetensors")
+	if _, err := os.Stat(weightsPath); os.IsNotExist(err) {
+		t.Skipf("Model fixture not found: %s (run `make golden-model` to download)", weightsPath)
+	}
+
 	cfg := runtime.ModelConfig{
 		HiddenSize:        meta.HiddenSize,
 		IntermediateSize:  meta.IntermediateSize,
@@ -113,7 +125,6 @@ func setupRuntime(t *testing.T, meta Metadata) *runtime.ModelRuntime {
 		t.Fatalf("Failed to create runtime: %v", err)
 	}
 
-	weightsPath := filepath.Join(modelDir, "tiny_model.safetensors")
 	if err := rt.LoadWeights(weightsPath); err != nil {
 		t.Fatalf("Failed to load weights: %v", err)
 	}

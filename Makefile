@@ -26,6 +26,15 @@ test:
 test-metal:
 	CGO_ENABLED=1 $(GOTEST) $(METAL_TAGS) -v ./...
 
+# Download the TinyLlama-1.1B golden-test fixture (multi-GB, git-ignored).
+# The golden tests in ./test/golden skip themselves until this fixture is present.
+golden-model:
+	./test/golden/fetch_model.sh
+
+# Run only the golden reference tests (skip cleanly if the fixture is absent)
+test-golden:
+	$(GOTEST) -v ./test/golden/...
+
 # Clean build artifacts
 clean:
 	$(GOCLEAN)
@@ -56,4 +65,4 @@ coverage:
 	$(GOTEST) -coverprofile=coverage.out ./...
 	$(GOCMD) tool cover -html=coverage.out -o coverage.html
 
-.PHONY: all build build-all test test-metal clean deps fmt vet vet-metal lint coverage
+.PHONY: all build build-all test test-metal golden-model test-golden clean deps fmt vet vet-metal lint coverage
