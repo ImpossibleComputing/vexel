@@ -113,6 +113,13 @@ func greedyGenerate(t *testing.T, label, modelPath string, prompt string, maxNew
 	if len(ids) == 0 {
 		t.Skipf("[%s] Encoded prompt has zero tokens", label)
 	}
+	// Prepend BOS for models that expect it, matching the production scheduler
+	// path (scheduler.AddSequence). tok.Encode intentionally omits BOS — callers
+	// add it. Gemma 2 in particular degenerates into repetition without a leading
+	// <bos>, so a harness that skips it does not exercise the real decode path.
+	if tok.AddBOS() {
+		ids = append([]int{tok.BOS()}, ids...)
+	}
 
 	vocabSize := model.config.VocabSize
 
@@ -203,8 +210,14 @@ func TestGenerateCountSequence(t *testing.T) {
 }
 
 // TestGenerateCoherent verifies factual knowledge by prompting with
-// "The capital of France is" and expecting "Paris" in the output.
+// "The capital of France is the city of" and expecting "Paris" in the output.
 // This catches SDPA bugs, attention softcap bugs, and RoPE regressions.
+//
+// The completion-style suffix ("...the city of") reliably elicits the factual
+// answer from instruct models even in raw-completion mode (no chat template).
+// The bare "The capital of France is" worked only by accident when BOS was
+// omitted; with the production-faithful BOS prepended (see greedyGenerate),
+// some instruct models free-associate on the shorter prompt.
 func TestGenerateCoherent(t *testing.T) {
 	models := availableModels(t)
 	for label, path := range models {
@@ -214,7 +227,7 @@ func TestGenerateCoherent(t *testing.T) {
 			deadline := time.After(30 * time.Second)
 			done := make(chan string, 1)
 			go func() {
-				out := greedyGenerate(t, label, path, "The capital of France is", 15)
+				out := greedyGenerate(t, label, path, "The capital of France is the city of", 15)
 				done <- out
 			}()
 			select {
