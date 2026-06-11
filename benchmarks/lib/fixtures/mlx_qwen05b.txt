@@ -1,0 +1,6 @@
+==========
+The quick brown fox jumps over the fence.
+==========
+Prompt: 33 tokens, 97.790 tokens-per-sec
+Generation: 10 tokens, 577.359 tokens-per-sec
+Peak memory: 0.310 GB
