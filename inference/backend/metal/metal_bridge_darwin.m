@@ -2,6 +2,7 @@
 #import <Metal/Metal.h>
 #import <MetalPerformanceShaders/MetalPerformanceShaders.h>
 #import <mach/mach_time.h>
+#include <pthread.h>
 #include "metal_bridge.h"
 
 // Embedded Metal shader source
@@ -12519,11 +12520,33 @@ void metal_copy_buffer(void* queue, void* srcBuffer, size_t srcOffset,
     [commandBuffer waitUntilCompleted];
 }
 
-// Global batch state (thread-local would be better for multi-threading)
+// Global batch/encoder state. The command-buffer + encoder are PROCESS-GLOBAL,
+// so when several Backends (each with its own MTLCommandQueue) submit work from
+// different goroutines concurrently, they would otherwise mutate the same
+// MTLComputeCommandEncoder simultaneously — encoders are NOT thread-safe, and one
+// thread's endEncoding/commit frees the encoder out from under another, faulting
+// inside the Metal driver. g_metalLock serialises every code path that touches
+// this shared state (get_encoder/finish_encode, begin/end batch, sync, barrier,
+// batched copy). It is RECURSIVE because a batch holds the lock across many
+// dispatches that each re-enter via get_encoder. NOTE: a recursive mutex must be
+// unlocked by the same OS thread that locked it, so the Go side calls
+// runtime.LockOSThread() for the lifetime of a batch (see Backend.BeginBatch).
 static id<MTLCommandQueue> g_batchQueue = nil;
 static id<MTLCommandBuffer> g_batchCmdBuffer = nil;
 static id<MTLComputeCommandEncoder> g_batchEncoder = nil;
 static int g_batchRefCount = 0;  // Nested batch reference count
+static pthread_mutex_t g_metalLock;
+// Initialise g_metalLock as RECURSIVE at load time (before main / any Backend use).
+// A load-time constructor avoids depending on PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP,
+// which is hidden under cgo's _POSIX_C_SOURCE compile flags.
+__attribute__((constructor))
+static void metal_lock_init(void) {
+    pthread_mutexattr_t attr;
+    pthread_mutexattr_init(&attr);
+    pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
+    pthread_mutex_init(&g_metalLock, &attr);
+    pthread_mutexattr_destroy(&attr);
+}
 
 // GPU profiling state
 static uint64_t g_gpuTotalTime = 0;
@@ -12550,6 +12573,8 @@ void metal_copy_buffer_batched(void* queue, void* srcBuffer, size_t srcOffset,
     id<MTLBuffer> src = (__bridge id<MTLBuffer>)srcBuffer;
     id<MTLBuffer> dst = (__bridge id<MTLBuffer>)dstBuffer;
 
+    // Serialise with batch/encoder mutation (reads and reassigns g_batchEncoder).
+    pthread_mutex_lock(&g_metalLock);
     if (g_batchEncoder != nil) {
         // In batch mode: end compute encoder, do blit, start new compute encoder
         // All on the same command buffer - no sync needed
@@ -12572,6 +12597,7 @@ void metal_copy_buffer_batched(void* queue, void* srcBuffer, size_t srcOffset,
         [blit endEncoding];
         [commandBuffer commit];
     }
+    pthread_mutex_unlock(&g_metalLock);
 }
 
 // Shader compilation
@@ -12625,6 +12651,11 @@ void* metal_create_pipeline(void* device, void* library, const char* functionNam
 void metal_sync(void* commandQueue) {
     uint64_t start = mach_absolute_time();
 
+    // Serialise with batch/encoder mutation: reading is_batch_mode() and touching
+    // g_batch* must not race another Backend's in-flight batch. Recursive, so a
+    // sync issued from inside this thread's own batch simply re-enters.
+    pthread_mutex_lock(&g_metalLock);
+
     // If we're in batch mode, we need to flush the batch first
     if (is_batch_mode()) {
         // End the current batch (commit and wait)
@@ -12645,6 +12676,7 @@ void metal_sync(void* commandQueue) {
     }
 
     g_gpuSyncTime += mach_to_ns(mach_absolute_time() - start);
+    pthread_mutex_unlock(&g_metalLock);
 }
 
 // =============================================================================
@@ -12656,6 +12688,12 @@ void metal_sync(void* commandQueue) {
 // Supports nesting: if already in a batch, increments ref count without creating a new CB.
 // This enables cross-layer batching where the outer caller wraps multiple layers.
 void metal_begin_batch(void* queuePtr) {
+    // Hold the global encode lock for the entire batch (released in
+    // metal_end_batch). Recursive: nested begins re-enter, and the per-dispatch
+    // get_encoder/finish_encode calls inside the batch re-enter on top of this.
+    // The Go side pins the goroutine to this OS thread (runtime.LockOSThread) for
+    // the batch lifetime so the matching unlock runs on the same thread.
+    pthread_mutex_lock(&g_metalLock);
     if (g_batchEncoder != nil) {
         // Already in a batch - increment ref count for nesting
         g_batchRefCount++;
@@ -12671,12 +12709,14 @@ void metal_begin_batch(void* queuePtr) {
 // Nested EndBatch calls just decrement the ref count.
 void metal_end_batch(void) {
     if (g_batchEncoder == nil) {
+        // No active batch (no matching begin took the lock) — nothing to release.
         return;
     }
     g_batchRefCount--;
     if (g_batchRefCount > 0) {
         // Nested batch - don't commit yet, just insert a barrier for safety
         [g_batchEncoder memoryBarrierWithScope:MTLBarrierScopeBuffers];
+        pthread_mutex_unlock(&g_metalLock);  // release this nested level
         return;
     }
     [g_batchEncoder endEncoding];
@@ -12695,6 +12735,7 @@ void metal_end_batch(void) {
     g_batchEncoder = nil;
     g_batchCmdBuffer = nil;
     g_batchQueue = nil;
+    pthread_mutex_unlock(&g_metalLock);  // release outermost batch level
 }
 
 // Insert a buffer-scope memory barrier on the current batch encoder.
@@ -12702,9 +12743,11 @@ void metal_end_batch(void) {
 // Required when multiple dispatches share the same MTLBuffer (scratch allocator).
 // No-op when not in batch mode (separate command buffers already serialize).
 void metal_memory_barrier(void) {
+    pthread_mutex_lock(&g_metalLock);
     if (g_batchEncoder != nil) {
         [g_batchEncoder memoryBarrierWithScope:MTLBarrierScopeBuffers];
     }
+    pthread_mutex_unlock(&g_metalLock);
 }
 
 // GPU Profiling functions
@@ -12731,6 +12774,11 @@ static inline bool is_batch_mode(void) {
 // If batching, returns the batch encoder and *commit=false
 // Otherwise creates a new command buffer/encoder and *commit=true
 static id<MTLComputeCommandEncoder> get_encoder(id<MTLCommandQueue> queue, id<MTLCommandBuffer>* cmdBufOut, bool* shouldCommit) {
+    // Acquire the global encode lock for the duration of this dispatch. The
+    // matching unlock happens in finish_encode(). When already inside a batch
+    // (begin_batch holds the lock on this same OS thread) the recursive mutex
+    // simply re-enters; when standalone, this serialises the single dispatch.
+    pthread_mutex_lock(&g_metalLock);
     if (is_batch_mode()) {
         *cmdBufOut = nil;
         *shouldCommit = false;
@@ -12756,7 +12804,10 @@ static inline void finish_encode(id<MTLComputeCommandEncoder> encoder, id<MTLCom
         g_gpuTotalTime += mach_to_ns(mach_absolute_time() - start);
         g_gpuBatchCount++;
     }
-    // In batch mode, don't end encoding - let metal_end_batch do it
+    // In batch mode, don't end encoding - let metal_end_batch do it.
+    // Release the lock acquired in get_encoder (recursive: in batch mode this
+    // drops back to the depth held by metal_begin_batch).
+    pthread_mutex_unlock(&g_metalLock);
 }
 
 // Helper to dispatch a compute kernel (supports batching)

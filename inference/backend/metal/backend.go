@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"runtime"
 	"strconv"
 	"sync"
 	"time"
@@ -603,13 +604,24 @@ func (b *Backend) Sync() {
 // BeginBatch starts a batch of operations that will share a single command buffer.
 // This reduces commit overhead by batching multiple kernel dispatches together.
 // Call EndBatch when done to commit all operations.
+//
+// metal_begin_batch acquires a process-global recursive mutex that it holds until
+// the matching metal_end_batch. A recursive mutex must be released by the same OS
+// thread that acquired it, so we pin this goroutine to its current OS thread for
+// the batch lifetime — otherwise the Go scheduler could migrate it between cgo
+// calls and the unlock in EndBatch would run on a different thread (EPERM / no-op,
+// leaving the lock held forever). LockOSThread nests, so nested BeginBatch/EndBatch
+// pairs balance correctly.
 func (b *Backend) BeginBatch() {
+	runtime.LockOSThread()
 	C.metal_begin_batch(b.queue)
 }
 
-// EndBatch commits all batched operations.
+// EndBatch commits all batched operations and releases the OS-thread pin taken in
+// BeginBatch.
 func (b *Backend) EndBatch() {
 	C.metal_end_batch()
+	runtime.UnlockOSThread()
 }
 
 // MemoryBarrier inserts a buffer-scope memory barrier in the current batch encoder.
