@@ -433,8 +433,16 @@ func TestGGUFTensorInfo_LLaMA2(t *testing.T) {
 }
 
 // TestAlternatingWindowSelection verifies that the alternating sliding window
-// pattern correctly routes even layers to global attention and odd layers to
-// sliding window attention with proper KV length computation.
+// pattern correctly routes even layers to sliding window attention and odd
+// layers to global attention with proper KV length computation.
+//
+// Parity reference (Gemma 2): even layers (0,2,4,...) use sliding window.
+//   - HF configuration_gemma2.py: layer_types default
+//     "sliding_attention" if bool((i+1)%2) else "full_attention"
+//     => bool((i+1)%2) is true when i is even => even layers slide.
+//   - HF original modeling_gemma2.py: self.is_sliding = not bool(layer_idx % 2)
+//     => true when layer_idx is even.
+//   - llama.cpp set_swa_pattern(2): swa_layers[il] = il % 2 < 1 => even il slide.
 //
 // Track 6: Gemma Architecture, Phase 2 Task 2.
 func TestAlternatingWindowSelection(t *testing.T) {
@@ -460,12 +468,12 @@ func TestAlternatingWindowSelection(t *testing.T) {
 			layerIdx int
 			want     bool
 		}{
-			{0, false}, // Even → global
-			{1, true},  // Odd → sliding
-			{2, false}, // Even → global
-			{3, true},  // Odd → sliding
-			{10, false},
-			{11, true},
+			{0, true},   // Even → sliding (HF: even layers slide)
+			{1, false},  // Odd → global
+			{2, true},   // Even → sliding
+			{3, false},  // Odd → global
+			{10, true},  // Even → sliding
+			{11, false}, // Odd → global
 		}
 		for _, tt := range tests {
 			got := br.useSlidingWindow(tt.layerIdx)
@@ -483,17 +491,17 @@ func TestAlternatingWindowSelection(t *testing.T) {
 			wantKVLen    int
 			wantStartPos int
 		}{
-			// Even layers (global) - always use full context
-			{0, 200, 200, 0},
-			{0, 50, 50, 0}, // Below window - no change
-			{2, 1000, 1000, 0},
+			// Odd layers (global) - always use full context
+			{1, 200, 200, 0},
+			{1, 50, 50, 0}, // Below window - no change
+			{3, 1000, 1000, 0},
 
-			// Odd layers (sliding) - cap at window size
-			{1, 200, 128, 72},  // 200 > 128, so window=128, startPos=72
-			{3, 500, 128, 372}, // 500 > 128, so window=128, startPos=372
-			{1, 50, 50, 0},     // 50 < 128, no truncation needed
-			{1, 128, 128, 0},   // Exactly window size, no truncation
-			{1, 129, 128, 1},   // Just over, trim 1
+			// Even layers (sliding) - cap at window size
+			{0, 200, 128, 72},  // 200 > 128, so window=128, startPos=72
+			{2, 500, 128, 372}, // 500 > 128, so window=128, startPos=372
+			{0, 50, 50, 0},     // 50 < 128, no truncation needed
+			{0, 128, 128, 0},   // Exactly window size, no truncation
+			{0, 129, 128, 1},   // Just over, trim 1
 		}
 		for _, tt := range tests {
 			gotKVLen, gotStartPos := br.effectiveKVLen(tt.layerIdx, tt.totalKVLen)

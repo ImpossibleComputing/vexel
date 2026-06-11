@@ -76,8 +76,8 @@ const (
 	WindowGlobal AttentionWindowType = iota
 	// WindowSliding uses sliding window attention on every layer (e.g. Mistral).
 	WindowSliding
-	// WindowAlternating uses global attention on even layers and sliding window
-	// on odd layers (e.g. Gemma 2).
+	// WindowAlternating uses sliding window attention on even layers and global
+	// attention on odd layers (e.g. Gemma 2).
 	WindowAlternating
 )
 
@@ -118,7 +118,7 @@ type ModelConfig struct {
 	// Phi-2 uses partial RoPE where only first 32 dims of 80 are rotated
 	RoPENeox            bool                // Use NEOX-style RoPE (split pairs: i, i+dim/2) vs LLaMA-style (interleaved: 2i, 2i+1)
 	SlidingWindow       int                 // Sliding window size for attention (0 = infinite/full context)
-	AttentionWindowType AttentionWindowType // Window pattern: Global (default), Sliding (all layers), Alternating (even=global, odd=sliding)
+	AttentionWindowType AttentionWindowType // Window pattern: Global (default), Sliding (all layers), Alternating (even=sliding, odd=global)
 
 	// Head dimension override (0 = hiddenSize/numAttentionHeads).
 	// Gemma 2 2B: hiddenSize=2304, numHeads=8, but headDim=256 (not 288).
@@ -444,7 +444,7 @@ func ModelConfigFromGGUF(g gguf.ModelConfigValues) ModelConfig {
 		if attnLogitSoftCap == 0 {
 			attnLogitSoftCap = 50.0 // Fallback default
 		}
-		attnWindowType = WindowAlternating // Even layers=global, odd layers=sliding window
+		attnWindowType = WindowAlternating // Even layers=sliding window, odd layers=global (Gemma 2)
 		hasPostNorms = true                // Gemma 2 applies RMSNorm after attn and MLP
 		ropeNeox = true                    // Gemma 2 uses NEOX-style RoPE (split-half pairs); llama.cpp GEMMA2->LLAMA_ROPE_TYPE_NEOX, HF rotate_half, GGUF Q/K unpermuted
 	case "deepseek", "deepseek2":

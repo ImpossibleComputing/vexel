@@ -459,8 +459,14 @@ func NewBlockRuntime(b backend.Backend, config ModelConfig) *BlockRuntime {
 
 // useSlidingWindow returns true if the given layer should use sliding window attention.
 // For WindowSliding: all layers use sliding window.
-// For WindowAlternating (Gemma 2): odd layers use sliding window, even layers use global.
+// For WindowAlternating (Gemma 2): even layers use sliding window, odd layers use global.
 // For WindowGlobal: no layers use sliding window.
+//
+// Gemma 2 parity — even layers (0,2,4,...) slide. Confirmed against:
+//   - HF configuration_gemma2.py: "sliding_attention" if bool((i+1)%2) else "full_attention"
+//     (bool((i+1)%2) is true when i is even).
+//   - HF original modeling_gemma2.py: self.is_sliding = not bool(layer_idx % 2).
+//   - llama.cpp set_swa_pattern(2): swa_layers[il] = il % 2 < 1 (true for even il).
 func (b *BlockRuntime) useSlidingWindow(layerIdx int) bool {
 	if b.SlidingWindow <= 0 {
 		return false // No window configured
@@ -469,7 +475,7 @@ func (b *BlockRuntime) useSlidingWindow(layerIdx int) bool {
 	case WindowSliding:
 		return true
 	case WindowAlternating:
-		return layerIdx%2 == 1 // Odd layers use sliding window
+		return layerIdx%2 == 0 // Even layers use sliding window (Gemma 2)
 	default:
 		return false
 	}
