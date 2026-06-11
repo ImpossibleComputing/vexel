@@ -66,12 +66,65 @@ find_llama() {
 }
 
 ###############################################################################
+# find_ollama — Locate the ollama CLI and confirm its server is reachable.
+#   The `ollama` CLI is a thin client; the model runs in (and all timing/memory
+#   metrics come from) the local HTTP API. We therefore require BOTH the binary
+#   AND a reachable server.
+#   Sets: OLLAMA_BIN, OLLAMA_AVAILABLE (1 = usable, 0 = skip)
+#   Honors OLLAMA_HOST (default http://localhost:11434).
+#   Degrades gracefully — reports the skip reason; never silently omits ollama.
+###############################################################################
+find_ollama() {
+    local host="${OLLAMA_HOST:-http://localhost:11434}"
+
+    if ! command -v ollama &>/dev/null; then
+        export OLLAMA_BIN="[missing]"
+        export OLLAMA_AVAILABLE=0
+        echo "[engines] ollama: not available (binary not found) — will be SKIPPED, not silently omitted"
+        return 0
+    fi
+
+    export OLLAMA_BIN="$(command -v ollama)"
+    if curl -s -o /dev/null --max-time 3 "$host/api/version" 2>/dev/null; then
+        export OLLAMA_AVAILABLE=1
+        echo "[engines] ollama found: $OLLAMA_BIN (server up at $host)"
+    else
+        export OLLAMA_AVAILABLE=0
+        echo "[engines] ollama: binary found ($OLLAMA_BIN) but server unreachable at $host — will be SKIPPED (start it with 'ollama serve')"
+    fi
+}
+
+###############################################################################
+# find_mlx — Locate the mlx_lm.generate entry point.
+#   Sets: MLX_GENERATE (executable path) or "[missing]".
+#   Degrades gracefully — reports the skip reason; never silently omits MLX.
+#
+#   ⚠️ MLX FORMAT CAVEAT (must be surfaced in every report):
+#   MLX consumes its OWN weight format (mlx-community 4-bit), NOT GGUF. An
+#   "apples-to-apples" MLX comparison therefore uses the SAME base model at an
+#   EQUIVALENT quantization (e.g. 4-bit) — NOT the identical file that Vexel /
+#   llama.cpp / ollama load. Numbers must be read with this caveat or they are
+#   silently misleading.
+###############################################################################
+find_mlx() {
+    if command -v mlx_lm.generate &>/dev/null; then
+        export MLX_GENERATE="$(command -v mlx_lm.generate)"
+        echo "[engines] mlx_lm.generate found: $MLX_GENERATE"
+    else
+        export MLX_GENERATE="[missing]"
+        echo "[engines] MLX: not available (mlx_lm not installed) — will be SKIPPED, not silently omitted"
+    fi
+}
+
+###############################################################################
 # setup_engines — Discover all engine binaries.
 ###############################################################################
 setup_engines() {
     echo "=== Setting up engines ==="
     find_vexel
     find_llama
+    find_ollama
+    find_mlx
 
     echo ""
     echo "[engines] VEXEL_BIN          = $VEXEL_BIN"
@@ -79,5 +132,7 @@ setup_engines() {
     echo "[engines] LLAMA_CLI          = $LLAMA_CLI"
     echo "[engines] LLAMA_SERVER       = $LLAMA_SERVER"
     echo "[engines] LLAMA_SPECULATIVE  = $LLAMA_SPECULATIVE"
+    echo "[engines] OLLAMA_BIN         = ${OLLAMA_BIN:-[missing]} (available=${OLLAMA_AVAILABLE:-0})"
+    echo "[engines] MLX_GENERATE       = ${MLX_GENERATE:-[missing]}"
     echo ""
 }

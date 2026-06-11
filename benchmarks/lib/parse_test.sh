@@ -18,6 +18,9 @@ FIXTURES="$SCRIPT_DIR/fixtures"
 
 # shellcheck source=./parse.sh
 source "$SCRIPT_DIR/parse.sh"
+# parse.sh enables `set -e`; disable it here so an assertion's internal non-zero
+# (e.g. a failed [[ ]]) reports a FAIL instead of aborting the whole runner.
+set +e
 
 TESTS_RUN=0
 TESTS_FAILED=0
@@ -35,18 +38,6 @@ assert_close() {
         echo "  ok   $name (got $actual, expected ~$expected)"
     else
         echo "  FAIL $name (got $actual, expected ~$expected ±$tol)"
-        TESTS_FAILED=$((TESTS_FAILED + 1))
-    fi
-}
-
-# assert_eq <name> <actual> <expected>
-assert_eq() {
-    local name="$1" actual="$2" expected="$3"
-    TESTS_RUN=$((TESTS_RUN + 1))
-    if [[ "$actual" == "$expected" ]]; then
-        echo "  ok   $name (got '$actual')"
-    else
-        echo "  FAIL $name (got '$actual', expected '$expected')"
         TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
 }
@@ -91,7 +82,7 @@ assert_close "ollama peak_mem_mb"   "$ol_mem"     "1721.21"  "0.5"
 echo "== ollama parser: missing /api/ps degrades to 0 memory (never crashes) =="
 ol_out_nomem=$(parse_ollama_metrics "$FIXTURES/ollama_generate_qwen05b.json")
 read -r _ _ _ ol_mem_missing <<<"$ol_out_nomem"
-assert_eq "ollama peak_mem_mb when ps absent" "$ol_mem_missing" "0"
+assert_close "ollama peak_mem_mb when ps absent" "$ol_mem_missing" "0" "0"
 
 ###############################################################################
 echo ""
