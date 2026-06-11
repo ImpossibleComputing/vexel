@@ -339,6 +339,11 @@ type BlockRuntime struct {
 	AttentionLogitSoftCap float32 // 0 = disabled, typically 30.0 for Gemma 2
 	HasPostNorms          bool    // Apply post-norms after attn and MLP (before residual)
 
+	// QueryPreAttnScalar is the denominator d in the attention scaling 1/sqrt(d).
+	// 0 = use HeadDim (standard). Gemma 2 sets this from query_pre_attn_scalar,
+	// which differs from head_dim on gemma-2-27b (144 vs 128).
+	QueryPreAttnScalar int
+
 	// Execution plan (set by ModelRuntime.BuildPlan)
 	plan *ExecutionPlan
 
@@ -438,6 +443,7 @@ func NewBlockRuntime(b backend.Backend, config ModelConfig) *BlockRuntime {
 	// Gemma 2 attention config
 	br.AttentionLogitSoftCap = config.AttentionLogitSoftCap
 	br.HasPostNorms = config.HasPostNorms
+	br.QueryPreAttnScalar = config.QueryPreAttnScalar
 
 	// Pre-allocate FP16 decode buffers if the backend supports permanent allocation.
 	// These are reused across all layers to avoid GPU TLB thrashing from 128 distinct
@@ -455,6 +461,20 @@ func NewBlockRuntime(b backend.Backend, config ModelConfig) *BlockRuntime {
 	}
 
 	return br
+}
+
+// attentionScale returns the factor applied to attention scores before softmax:
+// 1/sqrt(d). For most architectures d is the head dimension, but Gemma 2 decouples
+// it via query_pre_attn_scalar (QueryPreAttnScalar) — e.g. gemma-2-27b scales by
+// 1/sqrt(144) despite a head_dim of 128. QueryPreAttnScalar == 0 means "use HeadDim",
+// so every non-Gemma-2 model (and gemma-2-2b/9b, where the scalar equals head_dim)
+// keeps the identical 1/sqrt(head_dim) scaling.
+func (b *BlockRuntime) attentionScale() float32 {
+	d := b.HeadDim
+	if b.QueryPreAttnScalar > 0 {
+		d = b.QueryPreAttnScalar
+	}
+	return float32(1.0 / sqrt(float64(d)))
 }
 
 // useSlidingWindow returns true if the given layer should use sliding window attention.
@@ -668,7 +688,7 @@ func (b *BlockRuntime) Execute(x, scratch tensor.Tensor, kvCache *kv.KVCache, la
 	b.applyRoPE(qPtr, kPtr, headDim, numHeads, numKVHeads, seqLen, pos)
 
 	// 4. Attention
-	scale := float32(1.0 / sqrt(float64(headDim)))
+	scale := b.attentionScale()
 	if seqLen == 1 {
 		if b.AttentionLogitSoftCap > 0 && b.softCapOps != nil {
 			b.softCapOps.SDPASoftCap(qPtr, kPtr, vPtr, attnOutPtr, seqLen, numHeads, numKVHeads, headDim, scale, b.AttentionLogitSoftCap, headDim)
@@ -865,7 +885,7 @@ func (b *BlockRuntime) ExecuteWithPagedKV(x, scratch tensor.Tensor, pagedCache *
 	barrier() // RoPE done → KV store/attention reads K/V
 
 	// 4. Store current K/V in cache and compute attention
-	scale := float32(1.0 / sqrt(float64(headDim)))
+	scale := b.attentionScale()
 
 	// GPU-native paged path: scatter K/V into GPU block pool and run paged SDPA.
 	// Only used for decode (seqLen==1) where paged SDPA is available.
@@ -1630,7 +1650,7 @@ func (b *BlockRuntime) ExecuteWithGPUKV(x, scratch tensor.Tensor, gpuCache *GPUK
 	barrier()
 
 	// 5. Attention: Q @ K^T -> softmax -> @ V
-	scale := float32(1.0 / sqrt(float64(headDim)))
+	scale := b.attentionScale()
 
 	// Debug: dump Q, K, V before SDPA
 	debugThisLayerSDPA := debugDecode && (layerIdx <= 2 || layerIdx >= 30)

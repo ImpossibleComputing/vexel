@@ -269,7 +269,9 @@ func Backward(
 		dK := b.Alloc(seqLen * numKVHeads * headDim * 4)
 		dV := b.Alloc(seqLen * vDim * 4)
 
-		attnScale := float32(1.0 / math.Sqrt(float64(headDim)))
+		// Must match the forward attention scale (TrainingForward → attentionScale):
+		// Gemma 2 decouples this from head_dim via query_pre_attn_scalar (e.g. 27b).
+		attnScale := float32(1.0 / math.Sqrt(float64(cfg.EffectiveQueryPreAttnScalar())))
 		attnWeights := b.Alloc(numHeads * seqLen * seqLen * 4)
 		training.ComputeAttnWeights(saved.Q, saved.K, attnWeights, seqLen, headDim, numHeads, numKVHeads, attnScale)
 

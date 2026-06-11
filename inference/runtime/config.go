@@ -154,6 +154,40 @@ func (c ModelConfig) EffectiveHeadDim() int {
 	return c.HiddenSize / c.NumAttentionHeads
 }
 
+// EffectiveQueryPreAttnScalar returns the denominator d used in the attention
+// scaling 1/sqrt(d). It is QueryPreAttnScalar when set, otherwise it falls back
+// to EffectiveHeadDim (the standard 1/sqrt(head_dim) scaling).
+func (c ModelConfig) EffectiveQueryPreAttnScalar() int {
+	if c.QueryPreAttnScalar > 0 {
+		return c.QueryPreAttnScalar
+	}
+	return c.EffectiveHeadDim()
+}
+
+// gemma2QueryPreAttnScalar reconstructs Gemma 2's query_pre_attn_scalar, the
+// denominator d in the attention scaling 1/sqrt(d). HF stores this value in its
+// config, but it is absent from GGUF, so we derive it from known architecture
+// facts:
+//
+//   - gemma-2-2b / gemma-2-9b: query_pre_attn_scalar == head_dim == 256 (the HF
+//     default). Hardcoding 1/sqrt(head_dim) was therefore correct-by-coincidence
+//     for these models.
+//   - gemma-2-27b: query_pre_attn_scalar == hidden_size/num_heads == 144, which
+//     is DECOUPLED from its head_dim of 128.
+//
+// 27b is the only Gemma 2 model whose head_dim differs from 256, so we detect it
+// that way and fall back to hidden_size/num_heads (its actual scalar).
+func gemma2QueryPreAttnScalar(headDim, hiddenSize, numHeads int) int {
+	const gemma2DefaultScalar = 256 // HF default; equals head_dim for 2b/9b
+	if headDim == gemma2DefaultScalar {
+		return gemma2DefaultScalar
+	}
+	if numHeads > 0 {
+		return hiddenSize / numHeads
+	}
+	return gemma2DefaultScalar
+}
+
 // MemoryPlan holds the estimated memory usage breakdown.
 type MemoryPlan struct {
 	Weights int64
@@ -414,6 +448,7 @@ func ModelConfigFromGGUF(g gguf.ModelConfigValues) ModelConfig {
 	attnWindowType := WindowGlobal // Default: full context on every layer
 	hasPostNorms := false          // Default: no post-norms
 	embeddingScale := float32(0)   // 0 = disabled, Gemma uses sqrt(hiddenSize)
+	queryPreAttnScalar := 0        // 0 = disabled, fall back to 1/sqrt(head_dim)
 
 	hasQKVBias := false
 
@@ -454,6 +489,13 @@ func ModelConfigFromGGUF(g gguf.ModelConfigValues) ModelConfig {
 		attnWindowType = WindowAlternating // Even layers=sliding window, odd layers=global (Gemma 2)
 		hasPostNorms = true                // Gemma 2 applies RMSNorm after attn and MLP
 		ropeNeox = true                    // Gemma 2 uses NEOX-style RoPE (split-half pairs); llama.cpp GEMMA2->LLAMA_ROPE_TYPE_NEOX, HF rotate_half, GGUF Q/K unpermuted
+		// query_pre_attn_scalar is an HF hparam absent from GGUF; reconstruct it.
+		// 256 for 2b/9b (==head_dim), 144 for 27b (decoupled from head_dim=128).
+		gemmaHeadDim := g.HeadDim
+		if gemmaHeadDim == 0 {
+			gemmaHeadDim = g.HiddenSize / g.NumHeads
+		}
+		queryPreAttnScalar = gemma2QueryPreAttnScalar(gemmaHeadDim, g.HiddenSize, g.NumHeads)
 	case "deepseek", "deepseek2":
 		normType = NormRMSNorm
 		mlpType = MLPMoE // MoE layers; dense layers within the model also use SwiGLU
@@ -507,6 +549,7 @@ func ModelConfigFromGGUF(g gguf.ModelConfigValues) ModelConfig {
 		AttentionLogitSoftCap: attnLogitSoftCap,
 		FinalLogitSoftCap:     g.FinalLogitSoftCap,
 		HasPostNorms:          hasPostNorms,
+		QueryPreAttnScalar:    queryPreAttnScalar,
 		EmbeddingScale:        embeddingScale,
 		NumMoEExperts:         g.ExpertCount,
 		NumMoESelected:        g.ExpertUsedCount,

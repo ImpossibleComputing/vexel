@@ -2,7 +2,6 @@ package runtime
 
 import (
 	"fmt"
-	"math"
 
 	"vexel/inference/backend"
 	"vexel/inference/tensor"
@@ -183,7 +182,7 @@ func (b *BlockRuntime) TrainingForward(xPtr tensor.DevicePtr, seqLen, layerIdx i
 
 	// --- 4. SDPA (prefill, causal) ---
 	attnOutPtr := b.backend.Alloc(attnOutBytes)
-	scale := float32(1.0 / math.Sqrt(float64(headDim)))
+	scale := b.attentionScale()
 
 	if b.AttentionLogitSoftCap > 0 && b.softCapOps != nil {
 		b.softCapOps.SDPAPrefillSoftCap(qPtr, kPtr, vPtr, attnOutPtr, seqLen, numHeads, numKVHeads, headDim, scale, b.AttentionLogitSoftCap)
