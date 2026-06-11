@@ -434,7 +434,7 @@ func ModelConfigFromGGUF(g gguf.ModelConfigValues) ModelConfig {
 		mlpType = MLPGeGLU
 		hasBias = false
 		embeddingScale = float32(math.Sqrt(float64(g.HiddenSize)))
-		// Gemma 1 uses LLaMA-style RoPE (interleaved pairs)
+		ropeNeox = true // Gemma uses NEOX-style RoPE (split-half pairs i, i+dim/2); GGUF Q/K unpermuted
 	case "gemma2":
 		normType = NormRMSNorm
 		mlpType = MLPGeGLU
@@ -446,7 +446,7 @@ func ModelConfigFromGGUF(g gguf.ModelConfigValues) ModelConfig {
 		}
 		attnWindowType = WindowAlternating // Even layers=global, odd layers=sliding window
 		hasPostNorms = true                // Gemma 2 applies RMSNorm after attn and MLP
-		// Gemma 2 uses LLaMA-style RoPE (interleaved pairs)
+		ropeNeox = true                    // Gemma 2 uses NEOX-style RoPE (split-half pairs); llama.cpp GEMMA2->LLAMA_ROPE_TYPE_NEOX, HF rotate_half, GGUF Q/K unpermuted
 	case "deepseek", "deepseek2":
 		normType = NormRMSNorm
 		mlpType = MLPMoE // MoE layers; dense layers within the model also use SwiGLU

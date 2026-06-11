@@ -159,13 +159,19 @@ func TestModelConfigFromGGUF_ArchitectureDetection(t *testing.T) {
 			name:     "gemma",
 			arch:     "gemma",
 			wantNorm: NormRMSNorm, wantMLP: MLPGeGLU,
-			wantBias: false, wantParallel: false, wantRoPENeox: false, wantSoftCap: 0, wantWindowType: WindowGlobal, wantPostNorms: false,
+			// Gemma uses NEOX-style RoPE: llama.cpp maps GEMMA->LLAMA_ROPE_TYPE_NEOX and the
+			// GGUF converter leaves Q/K unpermuted (unlike llama/mistral), so the runtime must
+			// rotate split-half pairs (i, i+dim/2). See ov-41d / ov-5qq audit.
+			wantBias: false, wantParallel: false, wantRoPENeox: true, wantSoftCap: 0, wantWindowType: WindowGlobal, wantPostNorms: false,
 		},
 		{
 			name:     "gemma2",
 			arch:     "gemma2",
 			wantNorm: NormRMSNorm, wantMLP: MLPGeGLU,
-			wantBias: false, wantParallel: false, wantRoPENeox: false, wantSoftCap: 50.0, wantWindowType: WindowAlternating, wantPostNorms: true,
+			// Gemma 2 uses NEOX-style RoPE (split-half pairs): llama.cpp maps GEMMA2->
+			// LLAMA_ROPE_TYPE_NEOX and HF applies rotate_half; gemma Q/K are not permuted at
+			// GGUF conversion, so interleaved rotation would scramble positions. See ov-41d / ov-5qq.
+			wantBias: false, wantParallel: false, wantRoPENeox: true, wantSoftCap: 50.0, wantWindowType: WindowAlternating, wantPostNorms: true,
 		},
 	}
 
