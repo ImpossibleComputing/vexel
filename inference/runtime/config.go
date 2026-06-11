@@ -130,6 +130,13 @@ type ModelConfig struct {
 	HasPostNorms          bool      // Apply RMSNorm after attention and MLP (before residual). Gemma 2 only.
 	RoPEFreqScales        []float32 // Per-dimension inverse frequency values for learned RoPE (nil = use theta-based)
 
+	// QueryPreAttnScalar is the denominator d under the square root in the
+	// attention-score scaling 1/sqrt(d). For most architectures this equals the
+	// head dimension, but Gemma 2 decouples it (query_pre_attn_scalar): e.g.
+	// gemma-2-27b uses 144 while its head_dim is 128. 0 = disabled, meaning fall
+	// back to EffectiveHeadDim().
+	QueryPreAttnScalar int
+
 	// Gemma embedding scaling
 	EmbeddingScale float32 // Multiply embeddings by this factor after lookup (0 = disabled). Gemma uses sqrt(hiddenSize).
 
