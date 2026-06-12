@@ -86,7 +86,19 @@ metric, attaches auto-captured versions + hardware, and **exits non-zero if the
 record fails `validate_record`** — a malformed result fails loudly instead of
 feeding a wrong published number.
 
+## Consumers
+
+- `benchmarks/lib/report_compare.py` — renders the publishable markdown report
+  ("Vexel's position" table, variance inline, MLX caveat, hardware+versions
+  footer) from one of these records. Run automatically by `bench_compare.sh`.
+- `benchmarks/lib/regression_guard.py` — CI guard: fails (exit 1) if Vexel's
+  median `decode_tok_s` regressed more than a threshold (default 5%) vs a
+  stored baseline record (`benchmarks/results/baseline.json` by convention).
+
+Both refuse a record whose schema major version they don't know.
+
 ## Tests
-`python3 benchmarks/lib/stats_test.py`, `result_schema_test.py`, `metadata_test.py`
+`python3 benchmarks/lib/stats_test.py`, `result_schema_test.py`, `metadata_test.py`,
+`report_compare_test.py`, `regression_guard_test.py`
 (or all gates via `benchmarks/lib/run_tests.sh`). The statistics are pinned against
 hand-computed known inputs; the example above is checked to conform on every run.

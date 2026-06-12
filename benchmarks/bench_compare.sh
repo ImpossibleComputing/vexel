@@ -122,9 +122,24 @@ echo "=== Aggregating → $OUTPUT ==="
 python3 "$BENCH_ROOT/lib/aggregate_results.py" "$RESULTS_DIR/grid.jsonl" \
     -o "$OUTPUT" --warmup 0
 
+###############################################################################
+# Render the publishable markdown report (ov-5j6.4) — the generated replacement
+# for hand-edited RESULTS.md / perf_reports.
+###############################################################################
+REPORT_MD="${OUTPUT%.json}.md"
+echo ""
+echo "=== Report → $REPORT_MD ==="
+python3 "$BENCH_ROOT/lib/report_compare.py" "$OUTPUT" -o "$REPORT_MD"
+
 echo ""
 echo "=============================================="
 echo " bench-compare complete."
 echo " Per-run JSONL: $RESULTS_DIR/grid.jsonl"
 echo " Result JSON:   $OUTPUT"
+echo " Report:        $REPORT_MD"
+echo ""
+echo " CI regression guard (vs stored baseline):"
+echo "   python3 benchmarks/lib/regression_guard.py $OUTPUT"
+echo " Promote this run as the new baseline:"
+echo "   cp $OUTPUT benchmarks/results/baseline.json"
 echo "=============================================="

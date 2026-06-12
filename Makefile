@@ -79,4 +79,15 @@ bench-smoke:
 bench-test:
 	bash benchmarks/lib/run_tests.sh
 
-.PHONY: all build build-all test test-metal golden-model test-golden clean deps fmt vet vet-metal lint coverage bench-compare bench-smoke bench-test
+# Render the publishable markdown report from a result JSON.
+# Usage: make bench-report RESULT=benchmarks/results/<stamp>/compare.json
+bench-report:
+	python3 benchmarks/lib/report_compare.py $(RESULT) -o $(basename $(RESULT)).md
+
+# CI regression guard: fail if Vexel median decode tok/s regressed > threshold
+# (default 5%) vs the stored baseline (benchmarks/results/baseline.json).
+# Usage: make bench-guard RESULT=benchmarks/results/<stamp>/compare.json
+bench-guard:
+	python3 benchmarks/lib/regression_guard.py $(RESULT)
+
+.PHONY: all build build-all test test-metal golden-model test-golden clean deps fmt vet vet-metal lint coverage bench-compare bench-smoke bench-test bench-report bench-guard

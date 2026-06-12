@@ -41,6 +41,8 @@ run_suite "model matrix (bash)"        bash      "$SCRIPT_DIR/models_test.sh"
 run_suite "statistics (python)"        python3   "$SCRIPT_DIR/stats_test.py"
 run_suite "result schema (python)"     python3   "$SCRIPT_DIR/result_schema_test.py"
 run_suite "metadata parsers (python)"  python3   "$SCRIPT_DIR/metadata_test.py"
+run_suite "report generator (python)"  python3   "$SCRIPT_DIR/report_compare_test.py"
+run_suite "regression guard (python)"  python3   "$SCRIPT_DIR/regression_guard_test.py"
 
 if [[ "$FAIL" -eq 0 ]]; then
     echo "ALL HARNESS UNIT TESTS PASSED"

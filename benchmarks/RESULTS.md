@@ -1,5 +1,13 @@
 # Benchmark Results
 
+> **⚠️ SUPERSEDED (2026-06-12, ov-5j6.4):** This hand-edited file is replaced by
+> the generated report flow. Run `make bench-compare` — it writes a validated
+> result JSON *and* a publishable markdown report (with MLX/ollama, variance,
+> and version/hardware pinning) under `benchmarks/results/<stamp>/`. See
+> `benchmarks/lib/report_compare.py`. The numbers below predate the
+> multi-engine statistical harness ("best of 3", llama.cpp-only) and are kept
+> for history only.
+
 > Hardware: Apple M4 Max, 128 GB Unified Memory, 40 GPU cores, Metal 4
 > Models: LLaMA 3.1 8B Q4_K_M, TinyLlama 1.1B Q4_0
 > llama.cpp: b8534 (e99d77fa4)
