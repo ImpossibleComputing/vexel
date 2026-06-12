@@ -89,7 +89,7 @@ check("ollama version in footer", "0.13.5" in report)
 check("mlx_lm version in footer", "0.30.7" in report)
 
 print("== methodology surfaced (runs / warmup / aggregation contract) ==")
-check("measured runs stated", "10" in report)
+check("measured runs stated", "**measured_runs:** 10" in report)
 check("aggregation note stated", "no best-of-N" in report)
 
 print("== Vexel leading is reported as leading (not hardcoded 'behind') ==")

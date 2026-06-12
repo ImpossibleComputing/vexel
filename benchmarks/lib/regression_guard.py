@@ -152,7 +152,11 @@ def _load_record(path: Path, label: str) -> dict:
                   "`cp benchmarks/results/<stamp>/compare.json "
                   "benchmarks/results/baseline.json`", file=sys.stderr)
         raise FileNotFoundError(path)
-    record = json.loads(path.read_text())
+    try:
+        record = json.loads(path.read_text())
+    except json.JSONDecodeError as exc:
+        print(f"error: {label} {path} is not valid JSON: {exc}", file=sys.stderr)
+        raise ValueError(f"unparseable {label}") from exc
     errors = validate_record(record)
     if errors:
         print(f"error: {label} {path} fails schema validation:", file=sys.stderr)

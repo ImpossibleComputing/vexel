@@ -213,7 +213,11 @@ def main(argv: list[str]) -> int:
         print(f"error: input not found: {in_path}", file=sys.stderr)
         return 2
 
-    record = json.loads(in_path.read_text())
+    try:
+        record = json.loads(in_path.read_text())
+    except json.JSONDecodeError as exc:
+        print(f"error: {in_path} is not valid JSON: {exc}", file=sys.stderr)
+        return 2
     errors = validate_record(record)
     if errors:
         print(f"error: {in_path} fails schema validation:", file=sys.stderr)
