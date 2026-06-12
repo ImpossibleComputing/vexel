@@ -65,4 +65,18 @@ coverage:
 	$(GOTEST) -coverprofile=coverage.out ./...
 	$(GOCMD) tool cover -html=coverage.out -o coverage.html
 
-.PHONY: all build build-all test test-metal golden-model test-golden clean deps fmt vet vet-metal lint coverage
+# ── Multi-engine benchmark (ov-5j6) ───────────────────────────────────
+# Run the full Vexel/llama.cpp/ollama/MLX × model grid through the statistical
+# harness and write a variance-aware JSON result under benchmarks/results/.
+bench-compare:
+	bash benchmarks/bench_compare.sh
+
+# Fast end-to-end pipeline validation: Qwen-0.5B only, short runs, no 8B downloads.
+bench-smoke:
+	bash benchmarks/bench_compare.sh --smoke
+
+# Run the benchmark-harness unit tests (parsers + stats + schema + matrix).
+bench-test:
+	bash benchmarks/lib/run_tests.sh
+
+.PHONY: all build build-all test test-metal golden-model test-golden clean deps fmt vet vet-metal lint coverage bench-compare bench-smoke bench-test
